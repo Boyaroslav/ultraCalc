@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+
+	"github.com/Boyaroslav/ultraCalc/pkg/agent"
 	//"go.mongodb.org/mongo-driver/mongo"
 	//"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -36,14 +38,14 @@ func backend() {
 		for _, e := range ToDo {
 			fmt.Fprintf(w, e.body)
 			if e.status == NotDone {
-				fmt.Fprintf(w, "  wait...")
+				fmt.Fprint(w, "  wait...")
 			}
 			if e.status == Done {
 
-				fmt.Fprintf(w, "="+string(e.answer)+"   Done!")
+				fmt.Fprint(w, "=", e.answer, "   Done!")
 			}
 			if e.status == Error {
-				fmt.Fprintf(w, "  error  "+fmt.Sprint(e.err))
+				fmt.Fprint(w, "  error  ", fmt.Sprint(e.err))
 			}
 			fmt.Fprintf(w, "<br>")
 		}
@@ -62,19 +64,23 @@ func backend() {
 }
 
 func Calculate() {
+	os.Setenv("COUNT", "1")
 
 	for {
 		for i, _ := range ToDo {
 			if ToDo[i].inprogress == 0 {
 				ToDo[i].inprogress = 1
 				go func() {
-					r := <-StartCalculating(ToDo)
-					if r.err != nil {
+					res := make(chan agent.Result, 1)
+					agent.StartCalculating(ToDo[i].body, res)
+					r := <-res
+
+					if r.Err != nil {
 						ToDo[i].status = Error
-						ToDo[i].err = r.err
+						ToDo[i].err = r.Err
 					} else {
 						ToDo[i].status = Done
-						ToDo[i].answer = r.answer
+						ToDo[i].answer = r.Answer
 					}
 
 				}()

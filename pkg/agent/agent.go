@@ -12,8 +12,8 @@ type block struct {
 }
 
 type Result struct {
-	answer int
-	err    error
+	Answer int
+	Err    error
 }
 
 func delSpace(buff []block, i int, v int) ([]block, int) {
@@ -127,7 +127,7 @@ func solve(buff []block) Result {
 		}
 	}
 	for i, e := range buff {
-		if e.typ == 'c' && (e.b != '(' && e.b != ')') {
+		if e.typ == 'c' && (e.b != '(' && e.b != ')' && e.b != ' ') {
 			if i < 1 || i >= len(buff)-1 {
 				return Result{0, errors.New("error while parsing!")}
 			} else {
