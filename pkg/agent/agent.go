@@ -2,6 +2,8 @@ package agent
 
 import (
 	"errors"
+	"fmt"
+	"net/http"
 )
 
 type block struct {
@@ -131,7 +133,7 @@ func solve(buff []block) Result {
 			if i < 1 || i >= len(buff)-1 {
 				return Result{0, errors.New("error while parsing!")}
 			} else {
-				if buff[i-1].typ == 'c' || buff[i+1].typ == 'c' {
+				if (buff[i-1].typ == 'c' && (buff[i-1].b != '(' && buff[i-1].b != ')' && buff[i-1].b != ' ')) || (buff[i+1].typ == 'c' && (buff[i+1].b != '(' && buff[i+1].b != ')' && buff[i+1].b != ' ')) {
 					return Result{0, errors.New("error while parsing!")}
 				}
 			}
@@ -155,4 +157,17 @@ func StartCalculating(s string, res chan<- Result) {
 	ans := solve(buff)
 	res <- ans
 
+}
+
+func agent_server() {
+	http.HandleFunc("/calculate", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			s := string(r.FormValue("text"))
+			res := make(chan Result, 1)
+			StartCalculating(s, res)
+
+		}
+		fmt.Fprintf(w, "okay")
+
+	})
 }

@@ -4,6 +4,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/Boyaroslav/ultraCalc/pkg/agent"
 	//"go.mongodb.org/mongo-driver/mongo"
@@ -17,11 +21,15 @@ type Page struct {
 
 type ToDoItem struct {
 	body       string
-	answer     int
-	status     int
+	answer     int64
+	status     int32
 	err        error
-	inprogress int
+	inprogress int32
+	duration   time.Duration
 }
+
+var ToDoMx *sync.Mutex
+var number int64
 
 const NotDone = 0
 const Done = 1
@@ -35,6 +43,10 @@ func backend() {
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, string(main_page_start))
+		num := strconv.Itoa(int(number))
+
+		fmt.Fprintf(w, num) // число запущенных агентов для вычисления
+		fmt.Fprintf(w, "<br>")
 		for _, e := range ToDo {
 			fmt.Fprintf(w, e.body)
 			if e.status == NotDone {
@@ -42,7 +54,7 @@ func backend() {
 			}
 			if e.status == Done {
 
-				fmt.Fprint(w, "=", e.answer, "   Done!")
+				fmt.Fprint(w, "=", e.answer, "   Done!  Время выполнения - "+e.duration.String())
 			}
 			if e.status == Error {
 				fmt.Fprint(w, "  error  ", fmt.Sprint(e.err))
@@ -54,7 +66,7 @@ func backend() {
 	})
 	http.HandleFunc("/add", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			ToDo = append(ToDo, ToDoItem{string(r.FormValue("text")), 0, 0, nil, 0})
+			ToDo = append(ToDo, ToDoItem{string(r.FormValue("text")), 0, 0, nil, 0, 0})
 		}
 		fmt.Fprintf(w, "okay")
 
@@ -62,28 +74,46 @@ func backend() {
 
 	http.ListenAndServe(":8080", nil)
 }
+func remove(slice []ToDoItem, s int) []ToDoItem {
+	return append(slice[:s], slice[s+1:]...)
+}
 
-func Calculate() {
-	os.Setenv("COUNT", "1")
+func Calculate(numberofagents int64) {
+	number = 0
 
 	for {
-		for i, _ := range ToDo {
-			if ToDo[i].inprogress == 0 {
-				ToDo[i].inprogress = 1
-				go func() {
-					res := make(chan agent.Result, 1)
-					agent.StartCalculating(ToDo[i].body, res)
-					r := <-res
+		if number < numberofagents {
+			for i, _ := range ToDo {
+				if ToDo[i].inprogress == 0 {
+					fmt.Println(ToDo[i], number)
+					go func() {
+						if ToDo[i].inprogress == 1 {
+							return
+						}
+						ToDoMx.Lock()
+						atomic.AddInt32(&(ToDo[i].inprogress), 1)
+						ToDo[i].inprogress = 1
+						atomic.AddInt64(&number, 1)
+						start := time.Now()
+						res := make(chan agent.Result, 1)
+						agent.StartCalculating(ToDo[i].body, res)
+						r := <-res
 
-					if r.Err != nil {
-						ToDo[i].status = Error
-						ToDo[i].err = r.Err
-					} else {
-						ToDo[i].status = Done
-						ToDo[i].answer = r.Answer
-					}
+						if r.Err != nil {
+							ToDo[i].status = Error
+							ToDo[i].err = r.Err
+						} else {
+							atomic.AddInt32(&(ToDo[i].status), Done)
+							atomic.AddInt64(&(ToDo[i].answer), int64(r.Answer))
+						}
+						fmt.Println(ToDo[i])
+						duration := time.Since(start)
+						ToDo[i].duration = duration
+						ToDoMx.Unlock()
+						atomic.AddInt64(&number, -1)
 
-				}()
+					}()
+				}
 			}
 		}
 	}
@@ -106,6 +136,12 @@ func main() {
 
 	//collection = client.Database("Calculator").Collection("tasks")
 	//}
-	go Calculate()
+	ToDoMx = &sync.Mutex{}
+	numberofagents, err := strconv.Atoi(os.Getenv("NUMBER_OF_AGENTS"))
+	if err != nil {
+		fmt.Println("Cant get NUMBER_OF_AGENTS variable from env. Default is 10.")
+		numberofagents = 10
+	}
+	go Calculate(int64(numberofagents))
 	backend()
 }
