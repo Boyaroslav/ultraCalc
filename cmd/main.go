@@ -26,6 +26,7 @@ type ToDoItem struct {
 	err        error
 	inprogress int32
 	duration   time.Duration
+	date       time.Time
 }
 
 var ToDoMx *sync.Mutex
@@ -45,7 +46,7 @@ func backend() {
 		fmt.Fprintf(w, string(main_page_start))
 		num := strconv.Itoa(int(number))
 
-		fmt.Fprintf(w, num) // число запущенных агентов для вычисления
+		fmt.Fprintf(w, "<p>"+num+"</p>") // число запущенных агентов для вычисления
 		fmt.Fprintf(w, "<br>")
 		for _, e := range ToDo {
 			fmt.Fprintf(w, e.body)
@@ -59,6 +60,7 @@ func backend() {
 			if e.status == Error {
 				fmt.Fprint(w, "  error  ", fmt.Sprint(e.err))
 			}
+			fmt.Fprintf(w, "     "+e.date.Format("2006-01-02 15:04:05"))
 			fmt.Fprintf(w, "<br>")
 		}
 		fmt.Fprintf(w, string(main_page_end))
@@ -66,7 +68,7 @@ func backend() {
 	})
 	http.HandleFunc("/add", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			ToDo = append(ToDo, ToDoItem{string(r.FormValue("text")), 0, 0, nil, 0, 0})
+			ToDo = append(ToDo, ToDoItem{string(r.FormValue("text")), 0, 0, nil, 0, 0, time.Now()})
 		}
 		fmt.Fprintf(w, "okay")
 
@@ -85,7 +87,6 @@ func Calculate(numberofagents int64) {
 		if number < numberofagents {
 			for i, _ := range ToDo {
 				if ToDo[i].inprogress == 0 {
-					fmt.Println(ToDo[i], number)
 					go func() {
 						if ToDo[i].inprogress == 1 {
 							return
@@ -106,7 +107,6 @@ func Calculate(numberofagents int64) {
 							atomic.AddInt32(&(ToDo[i].status), Done)
 							atomic.AddInt64(&(ToDo[i].answer), int64(r.Answer))
 						}
-						fmt.Println(ToDo[i])
 						duration := time.Since(start)
 						ToDo[i].duration = duration
 						ToDoMx.Unlock()
